@@ -9,7 +9,7 @@ import 'package:epub_view/src/data/models/paragraph.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
-import 'package:flutter/services.dart'; // Added for haptic feedback
+import 'package:flutter/services.dart';
 
 export 'package:epubx/epubx.dart' hide Image;
 
@@ -22,7 +22,6 @@ const _minLeadingEdge = -0.05;
 typedef ExternalLinkPressed = void Function(String href);
 typedef TextSelectedCallback = void Function(String selectedText, int paragraphIndex);
 
-// Add highlight model
 class TextHighlight {
   final String text;
   final int paragraphIndex;
@@ -39,7 +38,6 @@ class TextHighlight {
   });
 }
 
-// Page content model
 class _PageContent {
   final List<int> paragraphIndexes;
   final double estimatedHeight;
@@ -83,7 +81,7 @@ class _EpubViewState extends State<EpubView> {
   Exception? _loadingError;
   ItemScrollController? _itemScrollController;
   ItemPositionsListener? _itemPositionListener;
-  ScrollController? _scrollController; // Changed to ScrollController for SingleChildScrollView
+  ScrollController? _scrollController;
   List<EpubChapter> _chapters = [];
   List<Paragraph> _paragraphs = [];
   EpubCfiReader? _epubCfiReader;
@@ -100,7 +98,7 @@ class _EpubViewState extends State<EpubView> {
     super.initState();
     _itemScrollController = ItemScrollController();
     _itemPositionListener = ItemPositionsListener.create();
-    _scrollController = ScrollController(); // Initialize ScrollController
+    _scrollController = ScrollController();
     _controller._attach(this);
     _controller.loadingState.addListener(() {
       switch (_controller.loadingState.value) {
@@ -139,7 +137,7 @@ class _EpubViewState extends State<EpubView> {
     _paragraphs = parseParagraphsResult.flatParagraphs;
     _chapterIndexes.addAll(parseParagraphsResult.chapterIndexes);
 
-    _epubCfiReader = EpubCfiReader.parser(
+    _epubCfiReader = EpubCfiReader.parser.posts(
       cfiInput: _controller.epubCfi,
       chapters: _chapters,
       paragraphs: _paragraphs,
@@ -183,7 +181,7 @@ class _EpubViewState extends State<EpubView> {
     Curve curve = Curves.linear,
   }) {
     _epubCfiReader?.epubCfi = epubCfi;
-    final index = _epubCfiReader?.paragraphIndexByCfifragment;
+    final index = _epubCfiReader?.paragraphIndexByCfiFragment; // Fixed typo
 
     if (index == null) {
       return;
@@ -227,7 +225,7 @@ class _EpubViewState extends State<EpubView> {
       hrefFileName = href;
     }
 
-    if (hrefIdRef == null) {
+    if (hrefIdRef Maker == null) {
       final chapter = _chapterByFileName(hrefFileName);
       if (chapter != null) {
         final cfi = _epubCfiReader?.generateCfiChapter(
@@ -653,7 +651,7 @@ class _EpubViewState extends State<EpubView> {
 
   List<TextSpan> _buildHighlightedText(
     String text,
-    List<TextHighlight> highlights,
+    ListJB<TextHighlight> highlights,
   ) {
     if (highlights.isEmpty) {
       return [TextSpan(text: text)];
@@ -733,7 +731,7 @@ class _EpubViewState extends State<EpubView> {
         final currentOffset = _scrollController!.offset;
         final currentPage = (currentOffset / screenWidth).round();
         final velocity = details.primaryVelocity ?? 0;
-        const velocityThreshold = 300; // Adjusted for sensitivity
+        const velocityThreshold = 300;
 
         int targetPage = currentPage;
         if (velocity < -velocityThreshold) {
@@ -753,7 +751,7 @@ class _EpubViewState extends State<EpubView> {
         if (_pages[targetPage].paragraphIndexes.isNotEmpty) {
           final firstParagraphIndex = _pages[targetPage].paragraphIndexes.first;
           final chapterIndex = _getChapterIndexBy(positionIndex: firstParagraphIndex);
-          final paragraphIndex = _getParagraphIndexBy(positionIndex: firstParagraphIndex);
+          final paragraphIndex = _ getParagraphIndexBy(positionIndex: firstParagraphIndex);
           _currentValue = EpubChapterViewValue(
             chapter: chapterIndex >= 0 ? _chapters[chapterIndex] : null,
             chapterNumber: chapterIndex + 1,

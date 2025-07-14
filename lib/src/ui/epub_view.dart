@@ -20,8 +20,8 @@ const _minTrailingEdge = 0.55;
 const _minLeadingEdge = -0.05;
 
 typedef ExternalLinkPressed = void Function(String href);
-typedef TextSelectedCallback = void Function(
-    String selectedText, int paragraphIndex);
+typedef TextSelectedCallback =
+    void Function(String selectedText, int paragraphIndex);
 
 // Add highlight model
 class TextHighlight {
@@ -44,7 +44,7 @@ class TextHighlight {
 class _PageContent {
   final List<int> paragraphIndexes;
   final double estimatedHeight;
-  
+
   _PageContent({required this.paragraphIndexes, required this.estimatedHeight});
 }
 
@@ -143,8 +143,10 @@ class _EpubViewState extends State<EpubView> {
       return true;
     }
     _chapters = parseChapters(_controller._document!);
-    final parseParagraphsResult =
-        parseParagraphs(_chapters, _controller._document!.Content);
+    final parseParagraphsResult = parseParagraphs(
+      _chapters,
+      _controller._document!.Content,
+    );
     _paragraphs = parseParagraphsResult.flatParagraphs;
     _chapterIndexes.addAll(parseParagraphsResult.chapterIndexes);
 
@@ -256,8 +258,9 @@ class _EpubViewState extends State<EpubView> {
           paragraph != null ? _chapters[paragraph.chapterIndex] : null;
 
       if (chapter != null && paragraph != null) {
-        final paragraphIndex =
-            _epubCfiReader?.getParagraphIndexByElement(paragraph.element);
+        final paragraphIndex = _epubCfiReader?.getParagraphIndexByElement(
+          paragraph.element,
+        );
         final cfi = _epubCfiReader?.generateCfi(
           book: _controller._document,
           chapter: chapter,
@@ -272,8 +275,12 @@ class _EpubViewState extends State<EpubView> {
   }
 
   // New: Add highlight functionality
-  void addHighlight(String text, int paragraphIndex,
-      {Color? color, String? note}) {
+  void addHighlight(
+    String text,
+    int paragraphIndex, {
+    Color? color,
+    String? note,
+  }) {
     final highlight = TextHighlight(
       text: text,
       paragraphIndex: paragraphIndex,
@@ -333,14 +340,15 @@ class _EpubViewState extends State<EpubView> {
       trailingEdge: trailingEdge,
       leadingEdge: leadingEdge,
     );
-    final index = posIndex >= _chapterIndexes.last
-        ? _chapterIndexes.length
-        : _chapterIndexes.indexWhere((chapterIndex) {
-            if (posIndex < chapterIndex) {
-              return true;
-            }
-            return false;
-          });
+    final index =
+        posIndex >= _chapterIndexes.last
+            ? _chapterIndexes.length
+            : _chapterIndexes.indexWhere((chapterIndex) {
+              if (posIndex < chapterIndex) {
+                return true;
+              }
+              return false;
+            });
 
     return index - 1;
   }
@@ -384,18 +392,24 @@ class _EpubViewState extends State<EpubView> {
   // Better page calculation method
   List<_PageContent> _calculatePagesImproved(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
-    final availableHeight = screenSize.height - 140; // Account for padding, safe area, page indicator
-    final availableWidth = screenSize.width - 40; // Account for horizontal padding
-    
+    final availableHeight =
+        screenSize.height -
+        140; // Account for padding, safe area, page indicator
+    final availableWidth =
+        screenSize.width - 40; // Account for horizontal padding
+
     final pages = <_PageContent>[];
     var currentPageParagraphs = <int>[];
     var currentHeight = 0.0;
-    
+
     for (int i = 0; i < _paragraphs.length; i++) {
       final paragraphText = _paragraphs[i].element.text ?? '';
-      
+
       // More accurate height estimation
-      final textStyle = (widget.builders as EpubViewBuilders<DefaultBuilderOptions>).options.textStyle;
+      final textStyle =
+          (widget.builders as EpubViewBuilders<DefaultBuilderOptions>)
+              .options
+              .textStyle;
       final textSpan = TextSpan(text: paragraphText, style: textStyle);
       final textPainter = TextPainter(
         text: textSpan,
@@ -403,15 +417,19 @@ class _EpubViewState extends State<EpubView> {
         maxLines: null,
       );
       textPainter.layout(maxWidth: availableWidth);
-      
-      final paragraphHeight = textPainter.size.height + 16.0; // Add some padding
-      
+
+      final paragraphHeight =
+          textPainter.size.height + 16.0; // Add some padding
+
       // Check if adding this paragraph would exceed page height
-      if (currentHeight + paragraphHeight > availableHeight && currentPageParagraphs.isNotEmpty) {
-        pages.add(_PageContent(
-          paragraphIndexes: List.from(currentPageParagraphs),
-          estimatedHeight: currentHeight,
-        ));
+      if (currentHeight + paragraphHeight > availableHeight &&
+          currentPageParagraphs.isNotEmpty) {
+        pages.add(
+          _PageContent(
+            paragraphIndexes: List.from(currentPageParagraphs),
+            estimatedHeight: currentHeight,
+          ),
+        );
         currentPageParagraphs = [i];
         currentHeight = paragraphHeight;
       } else {
@@ -419,22 +437,29 @@ class _EpubViewState extends State<EpubView> {
         currentHeight += paragraphHeight;
       }
     }
-    
+
     // Add the last page if it has content
     if (currentPageParagraphs.isNotEmpty) {
-      pages.add(_PageContent(
-        paragraphIndexes: currentPageParagraphs,
-        estimatedHeight: currentHeight,
-      ));
+      pages.add(
+        _PageContent(
+          paragraphIndexes: currentPageParagraphs,
+          estimatedHeight: currentHeight,
+        ),
+      );
     }
-    
+
     return pages;
   }
 
   // Build a single page with proper content fitting
-  Widget _buildPageContent(BuildContext context, _PageContent pageContent, int pageIndex, int totalPages) {
+  Widget _buildPageContent(
+    BuildContext context,
+    _PageContent pageContent,
+    int pageIndex,
+    int totalPages,
+  ) {
     final screenSize = MediaQuery.of(context).size;
-    
+
     return Container(
       width: screenSize.width,
       height: screenSize.height,
@@ -447,26 +472,27 @@ class _EpubViewState extends State<EpubView> {
               physics: const BouncingScrollPhysics(),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: pageContent.paragraphIndexes.map((paragraphIndex) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0),
-                    child: _buildChapterWithHighlights(
-                      context,
-                      widget.builders,
-                      widget.controller._document!,
-                      _chapters,
-                      _paragraphs,
-                      paragraphIndex,
-                      _getChapterIndexBy(positionIndex: paragraphIndex),
-                      _getParagraphIndexBy(positionIndex: paragraphIndex),
-                      _onLinkPressed,
-                    ),
-                  );
-                }).toList(),
+                children:
+                    pageContent.paragraphIndexes.map((paragraphIndex) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: _buildChapterWithHighlights(
+                          context,
+                          widget.builders,
+                          widget.controller._document!,
+                          _chapters,
+                          _paragraphs,
+                          paragraphIndex,
+                          _getChapterIndexBy(positionIndex: paragraphIndex),
+                          _getParagraphIndexBy(positionIndex: paragraphIndex),
+                          _onLinkPressed,
+                        ),
+                      );
+                    }).toList(),
               ),
             ),
           ),
-          
+
           // Page indicator at bottom
           Container(
             padding: const EdgeInsets.symmetric(vertical: 12),
@@ -485,7 +511,7 @@ class _EpubViewState extends State<EpubView> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                
+
                 // Page number
                 Text(
                   '${pageIndex + 1} / $totalPages',
@@ -537,21 +563,16 @@ class _EpubViewState extends State<EpubView> {
   }
 
   static Widget _chapterDividerBuilder(EpubChapter chapter) => Container(
-        height: 56,
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: const BoxDecoration(
-          color: Color(0x24000000),
-        ),
-        alignment: Alignment.centerLeft,
-        child: Text(
-          chapter.Title ?? '',
-          style: const TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      );
+    height: 56,
+    width: double.infinity,
+    padding: const EdgeInsets.all(16),
+    decoration: const BoxDecoration(color: Color(0x24000000)),
+    alignment: Alignment.centerLeft,
+    child: Text(
+      chapter.Title ?? '',
+      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+    ),
+  );
 
   static Widget _chapterBuilder(
     BuildContext context,
@@ -592,13 +613,14 @@ class _EpubViewState extends State<EpubView> {
             TagExtension(
               tagsToExtend: {"img"},
               builder: (imageContext) {
-                final url =
-                    imageContext.attributes['src']!.replaceAll('../', '');
-                final content = Uint8List.fromList(
-                    document.Content!.Images![url]!.Content!);
-                return Image(
-                  image: MemoryImage(content),
+                final url = imageContext.attributes['src']!.replaceAll(
+                  '../',
+                  '',
                 );
+                final content = Uint8List.fromList(
+                  document.Content!.Images![url]!.Content!,
+                );
+                return Image(image: MemoryImage(content));
               },
             ),
           ],
@@ -641,10 +663,11 @@ class _EpubViewState extends State<EpubView> {
           ),
           onSelectionChanged: (selection, cause) {
             if (selection.isCollapsed) return;
-            final selectedText = paragraphs[index]
-                    .element
-                    .text
-                    ?.substring(selection.start, selection.end) ??
+            final selectedText =
+                paragraphs[index].element.text?.substring(
+                  selection.start,
+                  selection.end,
+                ) ??
                 '';
             if (selectedText.isNotEmpty) {
               _onTextSelected(selectedText, index);
@@ -658,7 +681,9 @@ class _EpubViewState extends State<EpubView> {
 
   // New: Build highlighted text spans
   List<TextSpan> _buildHighlightedText(
-      String text, List<TextHighlight> highlights) {
+    String text,
+    List<TextHighlight> highlights,
+  ) {
     if (highlights.isEmpty) {
       return [TextSpan(text: text)];
     }
@@ -667,8 +692,9 @@ class _EpubViewState extends State<EpubView> {
     int currentIndex = 0;
 
     // Sort highlights by position in text
-    highlights
-        .sort((a, b) => text.indexOf(a.text).compareTo(text.indexOf(b.text)));
+    highlights.sort(
+      (a, b) => text.indexOf(a.text).compareTo(text.indexOf(b.text)),
+    );
 
     for (final highlight in highlights) {
       final highlightIndex = text.indexOf(highlight.text, currentIndex);
@@ -681,10 +707,12 @@ class _EpubViewState extends State<EpubView> {
       }
 
       // Add highlighted text
-      spans.add(TextSpan(
-        text: highlight.text,
-        style: TextStyle(backgroundColor: highlight.color),
-      ));
+      spans.add(
+        TextSpan(
+          text: highlight.text,
+          style: TextStyle(backgroundColor: highlight.color),
+        ),
+      );
 
       currentIndex = highlightIndex + highlight.text.length;
     }
@@ -733,19 +761,24 @@ class _EpubViewState extends State<EpubView> {
   Widget _buildHorizontalScroll(BuildContext context) {
     if (widget.pageSnapping) {
       _pages = _calculatePagesImproved(context);
-      
+
       return PageView.builder(
-        controller: _pageController,
+        controller: PageController(viewportFraction: 1.0),
         physics: const PageScrollPhysics(),
         scrollDirection: Axis.horizontal,
         itemCount: _pages.length,
         onPageChanged: (int pageIndex) {
           // Update current position based on page change
           if (_pages[pageIndex].paragraphIndexes.isNotEmpty) {
-            final firstParagraphIndex = _pages[pageIndex].paragraphIndexes.first;
-            final chapterIndex = _getChapterIndexBy(positionIndex: firstParagraphIndex);
-            final paragraphIndex = _getParagraphIndexBy(positionIndex: firstParagraphIndex);
-            
+            final firstParagraphIndex =
+                _pages[pageIndex].paragraphIndexes.first;
+            final chapterIndex = _getChapterIndexBy(
+              positionIndex: firstParagraphIndex,
+            );
+            final paragraphIndex = _getParagraphIndexBy(
+              positionIndex: firstParagraphIndex,
+            );
+
             _currentValue = EpubChapterViewValue(
               chapter: chapterIndex >= 0 ? _chapters[chapterIndex] : null,
               chapterNumber: chapterIndex + 1,
@@ -761,13 +794,18 @@ class _EpubViewState extends State<EpubView> {
           }
         },
         itemBuilder: (BuildContext context, int pageIndex) {
-          return _buildPageContent(context, _pages[pageIndex], pageIndex, _pages.length);
+          return _buildPageContent(
+            context,
+            _pages[pageIndex],
+            pageIndex,
+            _pages.length,
+          );
         },
       );
     } else {
       // Fallback to scroll-based approach but with better page-like items
       _pages = _calculatePagesImproved(context);
-      
+
       return ScrollablePositionedList.builder(
         shrinkWrap: widget.shrinkWrap,
         scrollDirection: Axis.horizontal,
@@ -776,7 +814,12 @@ class _EpubViewState extends State<EpubView> {
         itemScrollController: _itemScrollController,
         itemPositionsListener: _itemPositionListener,
         itemBuilder: (BuildContext context, int pageIndex) {
-          return _buildPageContent(context, _pages[pageIndex], pageIndex, _pages.length);
+          return _buildPageContent(
+            context,
+            _pages[pageIndex],
+            pageIndex,
+            _pages.length,
+          );
         },
       );
     }
@@ -801,7 +844,8 @@ class _EpubViewState extends State<EpubView> {
             key: const Key('epubx.root.error'),
             child: Padding(
               padding: const EdgeInsets.all(32),
-              child: builders.errorBuilder?.call(context, loadingError!) ??
+              child:
+                  builders.errorBuilder?.call(context, loadingError!) ??
                   Center(child: Text(loadingError.toString())),
             ),
           );

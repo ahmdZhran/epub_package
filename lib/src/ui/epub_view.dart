@@ -47,13 +47,14 @@ class EpubView extends StatefulWidget {
     this.onChapterChanged,
     this.onDocumentLoaded,
     this.onDocumentError,
-    this.onTextSelected, 
+    this.onTextSelected, // New callback for text selection
     this.builders = const EpubViewBuilders<DefaultBuilderOptions>(
       options: DefaultBuilderOptions(),
     ),
     this.shrinkWrap = false,
-    this.scrollDirection = Axis.vertical, // Parameter for scroll direction
-    this.pageSnapping = false, // Parameter for page snapping in horizontal mode
+    this.scrollDirection = Axis.vertical, // New parameter for scroll direction
+    this.pageSnapping =
+        false, // New parameter for page snapping in horizontal mode
     Key? key,
   }) : super(key: key);
 
@@ -61,8 +62,8 @@ class EpubView extends StatefulWidget {
   final ExternalLinkPressed? onExternalLinkPressed;
   final TextSelectedCallback? onTextSelected;
   final bool shrinkWrap;
-  final Axis scrollDirection; // scroll direction
-  final bool pageSnapping; // page snapping for horizontal scroll
+  final Axis scrollDirection; // New: scroll direction
+  final bool pageSnapping; // New: page snapping for horizontal scroll
   final void Function(EpubChapterViewValue? value)? onChapterChanged;
 
   /// Called when a document is loaded
@@ -82,15 +83,13 @@ class _EpubViewState extends State<EpubView> {
   Exception? _loadingError;
   ItemScrollController? _itemScrollController;
   ItemPositionsListener? _itemPositionListener;
-  PageController? _pageController;
   List<EpubChapter> _chapters = [];
   List<Paragraph> _paragraphs = [];
   EpubCfiReader? _epubCfiReader;
   EpubChapterViewValue? _currentValue;
   final _chapterIndexes = <int>[];
-  int _currentPageIndex = 0;
 
-  // Highlighting functionality
+  // New: Highlighting functionality
   final List<TextHighlight> _highlights = [];
   final Map<int, List<TextHighlight>> _paragraphHighlights = {};
 
@@ -101,7 +100,6 @@ class _EpubViewState extends State<EpubView> {
     super.initState();
     _itemScrollController = ItemScrollController();
     _itemPositionListener = ItemPositionsListener.create();
-    _pageController = PageController(keepPage: true);
     _controller._attach(this);
     _controller.loadingState.addListener(() {
       switch (_controller.loadingState.value) {
@@ -123,8 +121,7 @@ class _EpubViewState extends State<EpubView> {
 
   @override
   void dispose() {
-    _itemPositionListener?.itemPositions.removeListener(_changeListener);
-    _pageController?.dispose();
+    _itemPositionListener!.itemPositions.removeListener(_changeListener);
     _controller._detach();
     super.dispose();
   }
@@ -144,11 +141,7 @@ class _EpubViewState extends State<EpubView> {
       chapters: _chapters,
       paragraphs: _paragraphs,
     );
-    
-    if (widget.scrollDirection == Axis.vertical) {
-      _itemPositionListener!.itemPositions.addListener(_changeListener);
-    }
-    
+    _itemPositionListener!.itemPositions.addListener(_changeListener);
     _controller.isBookLoaded.value = true;
 
     return true;
@@ -180,20 +173,6 @@ class _EpubViewState extends State<EpubView> {
     widget.onChapterChanged?.call(_currentValue);
   }
 
-  void _updateCurrentValueForHorizontal(int index) {
-    final chapterIndex = _getChapterIndexBy(positionIndex: index);
-    final paragraphIndex = _getParagraphIndexBy(positionIndex: index);
-    
-    _currentValue = EpubChapterViewValue(
-      chapter: chapterIndex >= 0 ? _chapters[chapterIndex] : null,
-      chapterNumber: chapterIndex + 1,
-      paragraphNumber: paragraphIndex + 1,
-      position: null,
-    );
-    _controller.currentValueListenable.value = _currentValue;
-    widget.onChapterChanged?.call(_currentValue);
-  }
-
   void _gotoEpubCfi(
     String? epubCfi, {
     double alignment = 0,
@@ -207,31 +186,12 @@ class _EpubViewState extends State<EpubView> {
       return;
     }
 
-    if (widget.scrollDirection == Axis.horizontal) {
-      // For horizontal mode, navigate to the specific page
-      if (widget.pageSnapping) {
-        _pageController?.animateToPage(
-          index,
-          duration: duration,
-          curve: curve,
-        );
-      } else {
-        _itemScrollController?.scrollTo(
-          index: index,
-          duration: duration,
-          alignment: alignment,
-          curve: curve,
-        );
-      }
-    } else {
-      // For vertical mode
-      _itemScrollController?.scrollTo(
-        index: index,
-        duration: duration,
-        alignment: alignment,
-        curve: curve,
-      );
-    }
+    _itemScrollController?.scrollTo(
+      index: index,
+      duration: duration,
+      alignment: alignment,
+      curve: curve,
+    );
   }
 
   void _onLinkPressed(String href) {
@@ -289,7 +249,7 @@ class _EpubViewState extends State<EpubView> {
     }
   }
 
-  // Add highlight functionality
+  // New: Add highlight functionality
   void addHighlight(String text, int paragraphIndex,
       {Color? color, String? note}) {
     final highlight = TextHighlight(
@@ -317,41 +277,6 @@ class _EpubViewState extends State<EpubView> {
 
   void _onTextSelected(String selectedText, int paragraphIndex) {
     widget.onTextSelected?.call(selectedText, paragraphIndex);
-  }
-
-  // Navigation methods for horizontal mode
-  void nextPage() {
-    if (widget.scrollDirection == Axis.horizontal && widget.pageSnapping) {
-      if (_currentPageIndex < _paragraphs.length - 1) {
-        _pageController?.nextPage(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
-      }
-    }
-  }
-
-  void previousPage() {
-    if (widget.scrollDirection == Axis.horizontal && widget.pageSnapping) {
-      if (_currentPageIndex > 0) {
-        _pageController?.previousPage(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
-      }
-    }
-  }
-
-  void goToPage(int pageIndex) {
-    if (widget.scrollDirection == Axis.horizontal && widget.pageSnapping) {
-      if (pageIndex >= 0 && pageIndex < _paragraphs.length) {
-        _pageController?.animateToPage(
-          pageIndex,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
-      }
-    }
   }
 
   Paragraph? _paragraphByIdRef(String idRef) =>
@@ -530,61 +455,31 @@ class _EpubViewState extends State<EpubView> {
       children: <Widget>[
         if (chapterIndex >= 0 && paragraphIndex == 0)
           builders.chapterDividerBuilder(chapters[chapterIndex]),
-        Html(
-          data: paragraphs[index].element.outerHtml,
-          onLinkTap: (href, _, __) => onExternalLinkPressed(href!),
-          style: {
-            'html': Style(
-              padding: HtmlPaddings.only(
-                top: (options.paragraphPadding as EdgeInsets?)?.top,
-                right: (options.paragraphPadding as EdgeInsets?)?.right,
-                bottom: (options.paragraphPadding as EdgeInsets?)?.bottom,
-                left: (options.paragraphPadding as EdgeInsets?)?.left,
-              ),
-            ).merge(Style.fromTextStyle(options.textStyle)),
-          },
-          extensions: [
-            TagExtension(
-              tagsToExtend: {"img"},
-              builder: (imageContext) {
-                final url =
-                    imageContext.attributes['src']!.replaceAll('../', '');
-                final content = Uint8List.fromList(
-                    document.Content!.Images![url]!.Content!);
-                return Image(
-                  image: MemoryImage(content),
-                );
-              },
+        SelectableText.rich(
+          TextSpan(
+            children: _buildHighlightedText(
+              paragraphs[index].element.text ?? '',
+              highlights,
             ),
-          ],
-        ),
-        // Add selectable text overlay for highlighting
-        if (highlights.isNotEmpty)
-          SelectableText.rich(
-            TextSpan(
-              children: _buildHighlightedText(
-                paragraphs[index].element.text ?? '',
-                highlights,
-              ),
-            ),
-            onSelectionChanged: (selection, cause) {
-              if (selection.isCollapsed) return;
-              final selectedText = paragraphs[index]
-                      .element
-                      .text
-                      ?.substring(selection.start, selection.end) ??
-                  '';
-              if (selectedText.isNotEmpty) {
-                _onTextSelected(selectedText, index);
-              }
-            },
-            style: options.textStyle,
           ),
+          onSelectionChanged: (selection, cause) {
+            if (selection.isCollapsed) return;
+            final selectedText = paragraphs[index]
+                    .element
+                    .text
+                    .substring(selection.start, selection.end) ??
+                '';
+            if (selectedText.isNotEmpty) {
+              _onTextSelected(selectedText, index);
+            }
+          },
+          style: options.textStyle,
+        ),
       ],
     );
   }
 
-  // Build highlighted text spans
+  // New: Build highlighted text spans
   List<TextSpan> _buildHighlightedText(
       String text, List<TextHighlight> highlights) {
     if (highlights.isEmpty) {
@@ -657,196 +552,123 @@ class _EpubViewState extends State<EpubView> {
     );
   }
 
-  Widget _buildHorizontalScroll(BuildContext context) {
-    if (widget.pageSnapping) {
-      return PageView.builder(
-        controller: _pageController,
-        scrollDirection: Axis.horizontal,
-        itemCount: _paragraphs.length,
-        physics: const BouncingScrollPhysics(),
-        onPageChanged: (index) {
-          setState(() {
-            _currentPageIndex = index;
-          });
-          _updateCurrentValueForHorizontal(index);
-        },
-        itemBuilder: (BuildContext context, int index) {
-          return Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: SafeArea(
-              child: Column(
-                children: [
-                  // Progress bar
-                  Container(
-                    height: 3,
-                    width: double.infinity,
-                    color: Colors.grey[200],
-                    child: FractionallySizedBox(
-                      alignment: Alignment.centerLeft,
-                      widthFactor: (index + 1) / _paragraphs.length,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Colors.blue, Colors.blue.shade700],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  
-                  // Optional: Chapter title if it's the first paragraph of a chapter
-                  if (_getChapterIndexBy(positionIndex: index) >= 0 && 
-                      _getParagraphIndexBy(positionIndex: index) == 0)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        border: Border(
-                          bottom: BorderSide(color: Colors.grey[300]!),
-                        ),
-                      ),
-                      child: Text(
-                        _chapters[_getChapterIndexBy(positionIndex: index)].Title ?? '',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  
-                  // Main content
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: SingleChildScrollView(
-                        physics: const BouncingScrollPhysics(),
-                        child: _buildChapterWithHighlights(
-                          context,
-                          widget.builders,
-                          widget.controller._document!,
-                          _chapters,
-                          _paragraphs,
-                          index,
-                          _getChapterIndexBy(positionIndex: index),
-                          _getParagraphIndexBy(positionIndex: index),
-                          _onLinkPressed,
-                        ),
-                      ),
-                    ),
-                  ),
-                  
-                  // Bottom info bar
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[50],
-                      border: Border(
-                        top: BorderSide(color: Colors.grey[200]!),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        // Chapter info
-                        Expanded(
-                          child: Text(
-                            _getChapterIndexBy(positionIndex: index) >= 0 
-                                ? _chapters[_getChapterIndexBy(positionIndex: index)].Title ?? ''
-                                : '',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        
-                        // Page indicator
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[200],
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '${index + 1} / ${_paragraphs.length}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      );
+List<List<int>> _calculatePages(BuildContext context) {
+  final screenHeight = MediaQuery.of(context).size.height;
+  final availableHeight = screenHeight - 100; // Account for padding and safe area
+  final pages = <List<int>>[];
+  var currentPage = <int>[];
+  var currentHeight = 0.0;
+  
+  for (int i = 0; i < _paragraphs.length; i++) {
+    // Estimate paragraph height (this is a rough estimate)
+    final paragraphText = _paragraphs[i].element.text ?? '';
+    final estimatedHeight = (paragraphText.length / 80) * 24.0 + 16.0; // Rough calculation
+    
+    if (currentHeight + estimatedHeight > availableHeight && currentPage.isNotEmpty) {
+      pages.add(currentPage);
+      currentPage = [i];
+      currentHeight = estimatedHeight;
     } else {
-      // Regular horizontal scroll without page snapping
-      return ScrollablePositionedList.builder(
-        shrinkWrap: widget.shrinkWrap,
-        scrollDirection: Axis.horizontal,
-        initialScrollIndex: _epubCfiReader!.paragraphIndexByCfiFragment ?? 0,
-        itemCount: _paragraphs.length,
-        itemScrollController: _itemScrollController,
-        itemPositionsListener: _itemPositionListener,
-        itemBuilder: (BuildContext context, int index) {
-          return Container(
-            width: MediaQuery.of(context).size.width,
-            height: double.infinity,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 5,
-                  offset: const Offset(2, 0),
-                ),
-              ],
-            ),
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  child: _buildChapterWithHighlights(
-                    context,
-                    widget.builders,
-                    widget.controller._document!,
-                    _chapters,
-                    _paragraphs,
-                    index,
-                    _getChapterIndexBy(positionIndex: index),
-                    _getParagraphIndexBy(positionIndex: index),
-                    _onLinkPressed,
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      );
+      currentPage.add(i);
+      currentHeight += estimatedHeight;
     }
   }
+  
+  if (currentPage.isNotEmpty) {
+    pages.add(currentPage);
+  }
+  
+  return pages;
+}
+
+Widget _buildHorizontalScroll(BuildContext context) {
+  if (widget.pageSnapping) {
+    final pages = _calculatePages(context);
+    
+    return PageView.builder(
+      physics: const PageScrollPhysics(),
+      scrollDirection: Axis.horizontal,
+      itemCount: pages.length,
+      itemBuilder: (BuildContext context, int pageIndex) {
+        return Container(
+          width: double.infinity,
+          height: double.infinity,
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: pages[pageIndex].map((paragraphIndex) {
+                      return _buildChapterWithHighlights(
+                        context,
+                        widget.builders,
+                        widget.controller._document!,
+                        _chapters,
+                        _paragraphs,
+                        paragraphIndex,
+                        _getChapterIndexBy(positionIndex: paragraphIndex),
+                        _getParagraphIndexBy(positionIndex: paragraphIndex),
+                        _onLinkPressed,
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+              // Optional: Add page indicator
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      '${pageIndex + 1} / ${pages.length}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  } else {
+    return ScrollablePositionedList.builder(
+      shrinkWrap: widget.shrinkWrap,
+      scrollDirection: Axis.horizontal,
+      initialScrollIndex: _epubCfiReader!.paragraphIndexByCfiFragment ?? 0,
+      itemCount: _paragraphs.length,
+      itemScrollController: _itemScrollController,
+      itemPositionsListener: _itemPositionListener,
+      itemBuilder: (BuildContext context, int index) {
+        return Container(
+          width: MediaQuery.of(context).size.width,
+          height: double.infinity,
+          padding: const EdgeInsets.all(20),
+          child: SingleChildScrollView(
+            child: _buildChapterWithHighlights(
+              context,
+              widget.builders,
+              widget.controller._document!,
+              _chapters,
+              _paragraphs,
+              index,
+              _getChapterIndexBy(positionIndex: index),
+              _getParagraphIndexBy(positionIndex: index),
+              _onLinkPressed,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
 
   static Widget _builder(
     BuildContext context,

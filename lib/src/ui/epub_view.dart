@@ -414,47 +414,64 @@ class _EpubViewState extends State<EpubView> {
     return posIndex;
   }
 
-  // Better page calculation method
   List<_PageContent> _calculatePagesImproved(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
+    final safeArea = MediaQuery.of(context).padding;
+
+    // More precise available space calculation
     final availableHeight = screenSize.height -
-        140; // Account for padding, safe area, page indicator
-    final availableWidth =
-        screenSize.width - 40; // Account for horizontal padding
+        safeArea.top -
+        safeArea.bottom -
+        100; // Reduced margin for better space utilization
+
+    final availableWidth = screenSize.width - 40;
 
     final pages = <_PageContent>[];
     var currentPageParagraphs = <int>[];
     var currentHeight = 0.0;
 
+    final textStyle =
+        (widget.builders as EpubViewBuilders<DefaultBuilderOptions>)
+            .options
+            .textStyle;
+
     for (int i = 0; i < _paragraphs.length; i++) {
       final paragraphText = _paragraphs[i].element.text ?? '';
 
-      // More accurate height estimation
-      final textStyle =
-          (widget.builders as EpubViewBuilders<DefaultBuilderOptions>)
-              .options
-              .textStyle;
-      final textSpan = TextSpan(text: paragraphText, style: textStyle);
-      final textPainter = TextPainter(
-        text: textSpan,
-        textDirection: TextDirection.ltr,
-        maxLines: null,
-      );
-      textPainter.layout(maxWidth: availableWidth);
+      // Skip completely empty paragraphs but keep small spacing
+      if (paragraphText.trim().isEmpty) {
+        if (currentPageParagraphs.isNotEmpty) {
+          currentPageParagraphs.add(i);
+          currentHeight += 8.0; // Small space for empty paragraphs
+        }
+        continue;
+      }
 
-      final paragraphHeight = textPainter.size.height + 8.0; // Add some padding
+      final paragraphHeight =
+          _calculateParagraphHeight(paragraphText, textStyle, availableWidth);
 
-      // Check if adding this paragraph would exceed page height
-      if (currentHeight + paragraphHeight > availableHeight &&
-          currentPageParagraphs.isNotEmpty) {
-        pages.add(
-          _PageContent(
+      // Use 95% of available height for better space utilization
+      if (currentHeight + paragraphHeight > availableHeight * 0.95) {
+        // Only create new page if current page has content
+        if (currentPageParagraphs.isNotEmpty) {
+          pages.add(_PageContent(
             paragraphIndexes: List.from(currentPageParagraphs),
             estimatedHeight: currentHeight,
-          ),
-        );
-        currentPageParagraphs = [i];
-        currentHeight = paragraphHeight;
+          ));
+          currentPageParagraphs = [i];
+          currentHeight = paragraphHeight;
+        } else {
+          // If single paragraph is too long, split it
+          final splitParagraphs = _splitLongParagraph(
+              i, paragraphText, textStyle, availableWidth, availableHeight);
+
+          for (final splitInfo in splitParagraphs) {
+            pages.add(_PageContent(
+              paragraphIndexes: [splitInfo.paragraphIndex],
+              estimatedHeight: splitInfo.height,
+            ));
+          }
+        }
       } else {
         currentPageParagraphs.add(i);
         currentHeight += paragraphHeight;
@@ -463,15 +480,94 @@ class _EpubViewState extends State<EpubView> {
 
     // Add the last page if it has content
     if (currentPageParagraphs.isNotEmpty) {
-      pages.add(
-        _PageContent(
-          paragraphIndexes: currentPageParagraphs,
-          estimatedHeight: currentHeight,
-        ),
-      );
+      pages.add(_PageContent(
+        paragraphIndexes: currentPageParagraphs,
+        estimatedHeight: currentHeight,
+      ));
     }
 
     return pages;
+  }
+
+  bool _isArabicText(String text) {
+    final arabicRegex = RegExp(
+        r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]');
+    return arabicRegex.hasMatch(text);
+  }
+
+  TextDirection _getTextDirection(String text) {
+    return _isArabicText(text) ? TextDirection.rtl : TextDirection.ltr;
+  }
+
+  double _calculateParagraphHeight(
+      String text, TextStyle textStyle, double maxWidth) {
+    if (text.trim().isEmpty) return 8.0;
+
+    final textSpan = TextSpan(text: text, style: textStyle);
+    final textPainter = TextPainter(
+      text: textSpan,
+      textDirection: _getTextDirection(text),
+      maxLines: null,
+    );
+    textPainter.layout(maxWidth: maxWidth);
+
+    // Consistent spacing between paragraphs
+    return textPainter.size.height + 12.0;
+  }
+
+  List<_ParagraphSplit> _splitLongParagraph(
+    int originalIndex,
+    String text,
+    TextStyle textStyle,
+    double maxWidth,
+    double maxHeight,
+  ) {
+    final splits = <_ParagraphSplit>[];
+    final isArabic = _isArabicText(text);
+
+    // Different splitting patterns for Arabic and English
+    final sentences = isArabic
+        ? text.split(RegExp(r'[.!?؟۔]\s+')) // Arabic punctuation
+        : text.split(RegExp(r'[.!?]+\s+'));
+
+    var currentText = '';
+    var currentHeight = 0.0;
+
+    for (int i = 0; i < sentences.length; i++) {
+      final sentence = sentences[i].trim();
+      if (sentence.isEmpty) continue;
+
+      final separator = isArabic ? '؟ ' : '. ';
+      final testText =
+          currentText.isEmpty ? sentence : '$currentText$separator$sentence';
+      final testHeight =
+          _calculateParagraphHeight(testText, textStyle, maxWidth);
+
+      if (testHeight > maxHeight * 0.95 && currentText.isNotEmpty) {
+        splits.add(_ParagraphSplit(
+          paragraphIndex: originalIndex,
+          text: currentText,
+          height: currentHeight,
+        ));
+
+        currentText = sentence;
+        currentHeight =
+            _calculateParagraphHeight(currentText, textStyle, maxWidth);
+      } else {
+        currentText = testText;
+        currentHeight = testHeight;
+      }
+    }
+
+    if (currentText.isNotEmpty) {
+      splits.add(_ParagraphSplit(
+        paragraphIndex: originalIndex,
+        text: currentText,
+        height: currentHeight,
+      ));
+    }
+
+    return splits;
   }
 
   // Build a single page with proper content fitting
@@ -482,46 +578,65 @@ class _EpubViewState extends State<EpubView> {
     int totalPages,
   ) {
     final screenSize = MediaQuery.of(context).size;
+    final safeArea = MediaQuery.of(context).padding;
 
     return Container(
       width: screenSize.width,
       height: screenSize.height,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+      color: Colors.white, // Set background color
       child: Column(
         children: [
-          // Main content area
+          // Main content area with better space utilization
           Expanded(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: safeArea.top + 10,
+                bottom: 10,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: pageContent.paragraphIndexes.map((paragraphIndex) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0),
-                    child: _buildChapterWithHighlights(
-                      context,
-                      widget.builders,
-                      widget.controller._document!,
-                      _chapters,
-                      _paragraphs,
-                      paragraphIndex,
-                      _getChapterIndexBy(positionIndex: paragraphIndex),
-                      _getParagraphIndexBy(positionIndex: paragraphIndex),
-                      _onLinkPressed,
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  // Content area that fills available space
+                  Expanded(
+                    child: SingleChildScrollView(
+                      physics:
+                          const NeverScrollableScrollPhysics(), // Disable scrolling since content should fit
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children:
+                            pageContent.paragraphIndexes.map((paragraphIndex) {
+                          return Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.only(bottom: 8.0),
+                            child: _buildParagraphContent(
+                              context,
+                              paragraphIndex,
+                            ),
+                          );
+                        }).toList(),
+                      ),
                     ),
-                  );
-                }).toList(),
+                  ),
+                ],
               ),
             ),
           ),
 
-          // Page indicator at bottom
+          // Fixed page indicator at bottom
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 12),
+            height: 50,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              border: Border(top: BorderSide(color: Colors.grey[300]!)),
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Chapter info (optional)
                 Expanded(
                   child: Text(
                     _getCurrentChapterTitle(pageContent.paragraphIndexes.first),
@@ -533,8 +648,6 @@ class _EpubViewState extends State<EpubView> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-
-                // Page number
                 Text(
                   '${pageIndex + 1} / $totalPages',
                   style: const TextStyle(
@@ -548,6 +661,95 @@ class _EpubViewState extends State<EpubView> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildParagraphContent(BuildContext context, int paragraphIndex) {
+    if (paragraphIndex >= _paragraphs.length) return Container();
+
+    final paragraph = _paragraphs[paragraphIndex];
+    final text = paragraph.element.text ?? '';
+
+    // Handle empty paragraphs
+    if (text.trim().isEmpty) {
+      return const SizedBox(height: 8);
+    }
+
+    final chapterIndex = _getChapterIndexBy(positionIndex: paragraphIndex);
+    final relParagraphIndex =
+        _getParagraphIndexBy(positionIndex: paragraphIndex);
+
+    // Get text style
+    final defaultBuilder =
+        widget.builders as EpubViewBuilders<DefaultBuilderOptions>;
+    final options = defaultBuilder.options;
+
+    // Get highlights for this paragraph
+    final highlights = _paragraphHighlights[paragraphIndex] ?? [];
+
+    // Detect text direction and alignment
+    final isArabic = _isArabicText(text);
+    final textDirection = _getTextDirection(text);
+    final textAlign = isArabic ? TextAlign.right : TextAlign.left;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Chapter divider if needed
+        if (chapterIndex >= 0 && relParagraphIndex == 0)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              _chapters[chapterIndex].Title ?? 'Chapter ${chapterIndex + 1}',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+              textDirection:
+                  _getTextDirection(_chapters[chapterIndex].Title ?? ''),
+              textAlign: _isArabicText(_chapters[chapterIndex].Title ?? '')
+                  ? TextAlign.right
+                  : TextAlign.left,
+            ),
+          ),
+
+        // Paragraph content with proper alignment and direction
+        SizedBox(
+          width: double.infinity,
+          child: Directionality(
+            textDirection: textDirection,
+            child: SelectableText.rich(
+              TextSpan(
+                children: _buildHighlightedText(text, highlights),
+              ),
+              onSelectionChanged: (selection, cause) {
+                if (selection.isCollapsed) return;
+                final selectedText = text.substring(
+                  selection.start,
+                  selection.end,
+                );
+                if (selectedText.isNotEmpty) {
+                  _onTextSelected(selectedText, paragraphIndex);
+                }
+              },
+              style: options.textStyle.copyWith(
+                height: 1.5, // Better line spacing
+                letterSpacing:
+                    isArabic ? 0.0 : 0.3, // No letter spacing for Arabic
+              ),
+              textAlign: textAlign,
+              textDirection: textDirection,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -685,7 +887,7 @@ class _EpubViewState extends State<EpubView> {
           ),
           onSelectionChanged: (selection, cause) {
             if (selection.isCollapsed) return;
-            final selectedText = paragraphs[index].element.text?.substring(
+            final selectedText = paragraphs[index].element.text.substring(
                       selection.start,
                       selection.end,
                     ) ??
@@ -936,4 +1138,16 @@ class _EpubViewState extends State<EpubView> {
       },
     );
   }
+}
+
+class _ParagraphSplit {
+  final int paragraphIndex;
+  final String text;
+  final double height;
+
+  _ParagraphSplit({
+    required this.paragraphIndex,
+    required this.text,
+    required this.height,
+  });
 }

@@ -552,61 +552,123 @@ class _EpubViewState extends State<EpubView> {
     );
   }
 
-  Widget _buildHorizontalScroll(BuildContext context) {
-    if (widget.pageSnapping) {
-      return PageView.builder(
-        controller: PageController(
-          viewportFraction: 1.0,
-        ),
-        scrollDirection: Axis.horizontal,
-        physics: const PageScrollPhysics(),
-        itemCount: _paragraphs.length,
-        itemBuilder: (BuildContext context, int index) {
-          return Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            child: _buildChapterWithHighlights(
-              context,
-              widget.builders,
-              widget.controller._document!,
-              _chapters,
-              _paragraphs,
-              index,
-              _getChapterIndexBy(positionIndex: index),
-              _getParagraphIndexBy(positionIndex: index),
-              _onLinkPressed,
-            ),
-          );
-        },
-      );
+List<List<int>> _calculatePages(BuildContext context) {
+  final screenHeight = MediaQuery.of(context).size.height;
+  final availableHeight = screenHeight - 100; // Account for padding and safe area
+  final pages = <List<int>>[];
+  var currentPage = <int>[];
+  var currentHeight = 0.0;
+  
+  for (int i = 0; i < _paragraphs.length; i++) {
+    // Estimate paragraph height (this is a rough estimate)
+    final paragraphText = _paragraphs[i].element.text ?? '';
+    final estimatedHeight = (paragraphText.length / 80) * 24.0 + 16.0; // Rough calculation
+    
+    if (currentHeight + estimatedHeight > availableHeight && currentPage.isNotEmpty) {
+      pages.add(currentPage);
+      currentPage = [i];
+      currentHeight = estimatedHeight;
     } else {
-      return ScrollablePositionedList.builder(
-        shrinkWrap: widget.shrinkWrap,
-        scrollDirection: Axis.horizontal,
-        initialScrollIndex: _epubCfiReader!.paragraphIndexByCfiFragment ?? 0,
-        itemCount: _paragraphs.length,
-        itemScrollController: _itemScrollController,
-        itemPositionsListener: _itemPositionListener,
-        itemBuilder: (BuildContext context, int index) {
-          return Container(
-            width: MediaQuery.of(context).size.width * 0.8,
-            padding: const EdgeInsets.all(16),
-            child: _buildChapterWithHighlights(
-              context,
-              widget.builders,
-              widget.controller._document!,
-              _chapters,
-              _paragraphs,
-              index,
-              _getChapterIndexBy(positionIndex: index),
-              _getParagraphIndexBy(positionIndex: index),
-              _onLinkPressed,
-            ),
-          );
-        },
-      );
+      currentPage.add(i);
+      currentHeight += estimatedHeight;
     }
   }
+  
+  if (currentPage.isNotEmpty) {
+    pages.add(currentPage);
+  }
+  
+  return pages;
+}
+
+Widget _buildHorizontalScroll(BuildContext context) {
+  if (widget.pageSnapping) {
+    final pages = _calculatePages(context);
+    
+    return PageView.builder(
+      physics: const PageScrollPhysics(),
+      scrollDirection: Axis.horizontal,
+      itemCount: pages.length,
+      itemBuilder: (BuildContext context, int pageIndex) {
+        return Container(
+          width: double.infinity,
+          height: double.infinity,
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: pages[pageIndex].map((paragraphIndex) {
+                      return _buildChapterWithHighlights(
+                        context,
+                        widget.builders,
+                        widget.controller._document!,
+                        _chapters,
+                        _paragraphs,
+                        paragraphIndex,
+                        _getChapterIndexBy(positionIndex: paragraphIndex),
+                        _getParagraphIndexBy(positionIndex: paragraphIndex),
+                        _onLinkPressed,
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+              // Optional: Add page indicator
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      '${pageIndex + 1} / ${pages.length}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  } else {
+    return ScrollablePositionedList.builder(
+      shrinkWrap: widget.shrinkWrap,
+      scrollDirection: Axis.horizontal,
+      initialScrollIndex: _epubCfiReader!.paragraphIndexByCfiFragment ?? 0,
+      itemCount: _paragraphs.length,
+      itemScrollController: _itemScrollController,
+      itemPositionsListener: _itemPositionListener,
+      itemBuilder: (BuildContext context, int index) {
+        return Container(
+          width: MediaQuery.of(context).size.width,
+          height: double.infinity,
+          padding: const EdgeInsets.all(20),
+          child: SingleChildScrollView(
+            child: _buildChapterWithHighlights(
+              context,
+              widget.builders,
+              widget.controller._document!,
+              _chapters,
+              _paragraphs,
+              index,
+              _getChapterIndexBy(positionIndex: index),
+              _getParagraphIndexBy(positionIndex: index),
+              _onLinkPressed,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
 
   static Widget _builder(
     BuildContext context,

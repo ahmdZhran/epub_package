@@ -555,7 +555,11 @@ class _EpubViewState extends State<EpubView> {
   Widget _buildHorizontalScroll(BuildContext context) {
     if (widget.pageSnapping) {
       return PageView.builder(
+        controller: PageController(
+          viewportFraction: 1.0,
+        ),
         scrollDirection: Axis.horizontal,
+        physics: const PageScrollPhysics(),
         itemCount: _paragraphs.length,
         itemBuilder: (BuildContext context, int index) {
           return Container(

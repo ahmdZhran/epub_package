@@ -112,6 +112,7 @@ class _EpubViewState extends State<EpubView> {
     _itemScrollController = ItemScrollController();
     _itemPositionListener = ItemPositionsListener.create();
     _pageController = PageController(initialPage: 0);
+    _currentPageIndex = 0;
 
     _controller._attach(this);
 
@@ -711,7 +712,6 @@ class _EpubViewState extends State<EpubView> {
     final spans = <TextSpan>[];
     int currentIndex = 0;
 
-    // Sort highlights by position in text
     highlights.sort(
       (a, b) => text.indexOf(a.text).compareTo(text.indexOf(b.text)),
     );
@@ -721,12 +721,10 @@ class _EpubViewState extends State<EpubView> {
 
       if (highlightIndex == -1) continue;
 
-      // Add text before highlight
       if (highlightIndex > currentIndex) {
         spans.add(TextSpan(text: text.substring(currentIndex, highlightIndex)));
       }
 
-      // Add highlighted text
       spans.add(
         TextSpan(
           text: highlight.text,
@@ -779,6 +777,8 @@ class _EpubViewState extends State<EpubView> {
 
   int _currentPageIndex = 0;
   void _onPageChanged(int pageIndex) {
+    _currentPageIndex = pageIndex;
+
     if (_pages[pageIndex].paragraphIndexes.isNotEmpty) {
       final firstParagraphIndex = _pages[pageIndex].paragraphIndexes.first;
       final chapterIndex =
@@ -805,60 +805,75 @@ class _EpubViewState extends State<EpubView> {
     _pages = _calculatePagesImproved(context);
     final isRTL = Directionality.of(context) == TextDirection.rtl;
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (TapDownDetails details) {
-        final screenWidth = MediaQuery.of(context).size.width;
-        final dx = details.globalPosition.dx;
-
-        if (isRTL) {
-          if (dx > screenWidth * 0.7) {
-            if (_currentPageIndex > 0) {
-              setState(() {
-                _currentPageIndex--;
-              });
-              _onPageChanged(_currentPageIndex);
-            }
-          } else if (dx < screenWidth * 0.3) {
-            if (_currentPageIndex < _pages.length - 1) {
-              setState(() {
-                _currentPageIndex++;
-              });
-              _onPageChanged(_currentPageIndex);
-            }
-          }
-        } else {
-          if (dx < screenWidth * 0.3) {
-            if (_currentPageIndex > 0) {
-              setState(() {
-                _currentPageIndex--;
-              });
-              _onPageChanged(_currentPageIndex);
-            }
-          } else if (dx > screenWidth * 0.7) {
-            if (_currentPageIndex < _pages.length - 1) {
-              setState(() {
-                _currentPageIndex++;
-              });
-              _onPageChanged(_currentPageIndex);
-            }
-          }
-        }
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: Material(
-          elevation: 2,
-          borderRadius: BorderRadius.circular(12),
-          clipBehavior: Clip.antiAlias,
-          child: _buildPageContent(
-            context,
-            _pages[_currentPageIndex],
-            _currentPageIndex,
-            _pages.length,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Stack(
+        children: [
+          PageView.builder(
+            controller: _pageController,
+            onPageChanged: _onPageChanged,
+            itemCount: _pages.length,
+            physics: const NeverScrollableScrollPhysics(),
+            itemBuilder: (context, index) {
+              return Material(
+                elevation: 2,
+                borderRadius: BorderRadius.circular(12),
+                clipBehavior: Clip.antiAlias,
+                child: _buildPageContent(
+                  context,
+                  _pages[index],
+                  index,
+                  _pages.length,
+                ),
+              );
+            },
           ),
-        ),
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    final targetPage =
+                        isRTL ? _currentPageIndex - 1 : _currentPageIndex + 1;
+                    if (targetPage >= 0 && targetPage < _pages.length) {
+                      _goToPage(targetPage);
+                    }
+                  },
+                  child: Container(color: Colors.transparent),
+                ),
+              ),
+              Expanded(
+                flex: 4, // 40% of width
+                child: Container(color: Colors.transparent),
+              ),
+              Expanded(
+                flex: 3,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    final targetPage =
+                        isRTL ? _currentPageIndex + 1 : _currentPageIndex - 1;
+                    if (targetPage >= 0 && targetPage < _pages.length) {
+                      _goToPage(targetPage);
+                    }
+                  },
+                  child: Container(color: Colors.transparent),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
+    );
+  }
+
+  void _goToPage(int index) {
+    _pageController?.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
     );
   }
 

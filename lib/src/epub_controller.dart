@@ -13,6 +13,27 @@ class EpubController {
   List<EpubViewChapter>? _cacheTableOfContents;
   EpubBook? _document;
 
+  // Fixed: Added proper return type handling
+  void jumpToPage(int pageIndex) {
+    _epubViewState?._pageController?.jumpToPage(pageIndex);
+  }
+
+  // Fixed: Proper async handling with null safety
+  Future<void> animateToPage(
+    int pageIndex, {
+    Duration duration = const Duration(milliseconds: 300),
+    Curve curve = Curves.ease,
+  }) async {
+    await _epubViewState?._pageController?.animateToPage(
+      pageIndex,
+      duration: duration,
+      curve: curve,
+    );
+  }
+
+  int get currentPageIndex => _epubViewState?._currentPageIndex ?? 0;
+  int get totalPages => _epubViewState?._pages.length ?? 0;
+
   EpubChapterViewValue? get currentValue => _epubViewState?._currentValue;
 
   final isBookLoaded = ValueNotifier<bool>(false);
@@ -29,18 +50,20 @@ class EpubController {
         alignment: alignment,
       );
 
-  Future<void>? scrollTo({
+  // Fixed: Proper return type handling
+  Future<void> scrollTo({
     required int index,
     Duration duration = const Duration(milliseconds: 250),
     double alignment = 0,
     Curve curve = Curves.linear,
-  }) =>
-      _epubViewState?._itemScrollController?.scrollTo(
-        index: index,
-        duration: duration,
-        alignment: alignment,
-        curve: curve,
-      );
+  }) async {
+    await _epubViewState?._itemScrollController?.scrollTo(
+      index: index,
+      duration: duration,
+      alignment: alignment,
+      curve: curve,
+    );
+  }
 
   void gotoEpubCfi(
     String epubCfi, {

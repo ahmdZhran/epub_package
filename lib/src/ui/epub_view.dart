@@ -10,6 +10,7 @@ import 'package:epub_view/src/data/models/paragraph.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 export 'package:epubx/epubx.dart' hide Image;
 
@@ -54,6 +55,9 @@ class EpubView extends StatefulWidget {
     this.onExternalLinkPressed,
     this.onChapterChanged,
     this.onDocumentLoaded,
+    this.bookId, // This is crucial for API books
+    this.bookUrl, // Add book URL for additional identification
+    this.bookTitle,
     this.onDocumentError,
     this.onTextSelected, // New callback for text selection
     this.builders = const EpubViewBuilders<DefaultBuilderOptions>(
@@ -61,8 +65,7 @@ class EpubView extends StatefulWidget {
     ),
     this.shrinkWrap = false,
     this.scrollDirection = Axis.vertical, // New parameter for scroll direction
-    this.pageSnapping =
-        false, // New parameter for page snapping in horizontal mode
+    this.pageSnapping = false,
     Key? key,
   }) : super(key: key);
 
@@ -71,8 +74,11 @@ class EpubView extends StatefulWidget {
   final TextSelectedCallback? onTextSelected;
   final bool shrinkWrap;
   final Axis scrollDirection; // New: scroll direction
-  final bool pageSnapping; // New: page snapping for horizontal scroll
+  final bool pageSnapping;
   final void Function(EpubChapterViewValue? value)? onChapterChanged;
+  final String? bookId;
+  final String? bookUrl;
+  final String? bookTitle;
 
   /// Called when a document is loaded
   final void Function(EpubBook document)? onDocumentLoaded;
@@ -108,7 +114,6 @@ class _EpubViewState extends State<EpubView> {
   @override
   void initState() {
     super.initState();
-
     _itemScrollController = ItemScrollController();
     _itemPositionListener = ItemPositionsListener.create();
     _pageController = PageController(initialPage: 0);
@@ -154,6 +159,140 @@ class _EpubViewState extends State<EpubView> {
         setState(() {});
       }
     });
+  }
+
+  String _getBookIdentifier() {
+    // Priority order: bookId > bookUrl hash > bookTitle hash
+    if (widget.bookId != null && widget.bookId!.isNotEmpty) {
+      return widget.bookId!;
+    }
+
+    if (widget.bookUrl != null && widget.bookUrl!.isNotEmpty) {
+      // Create a hash from URL for consistent identification
+      return 'url_${widget.bookUrl.hashCode.abs()}';
+    }
+
+    if (widget.bookTitle != null && widget.bookTitle!.isNotEmpty) {
+      // Create a hash from title as last resort
+      return 'title_${widget.bookTitle.hashCode.abs()}';
+    }
+
+    // If no identifier available, use a default (won't save progress)
+    return 'unknown_book';
+  }
+
+  Future<void> _saveLastPage(int pageIndex) async {
+    final bookIdentifier = _getBookIdentifier();
+    if (bookIdentifier == 'unknown_book') {
+      print(
+          'Warning: No book identifier provided. Progress will not be saved.');
+      return;
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('last_page_$bookIdentifier', pageIndex);
+
+      // Also save additional metadata for API books
+      await prefs.setString('book_url_$bookIdentifier', widget.bookUrl ?? '');
+      await prefs.setString(
+          'book_title_$bookIdentifier', widget.bookTitle ?? '');
+      await prefs.setInt('last_saved_timestamp_$bookIdentifier',
+          DateTime.now().millisecondsSinceEpoch);
+
+      print('Saved progress for book: $bookIdentifier, page: $pageIndex');
+    } catch (e) {
+      print('Error saving progress: $e');
+    }
+  }
+
+  Future<int> _loadLastPage() async {
+    final bookIdentifier = _getBookIdentifier();
+    if (bookIdentifier == 'unknown_book') return 0;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedPage = prefs.getInt('last_page_$bookIdentifier') ?? 0;
+
+      // Optional: Check if saved data is not too old (e.g., 30 days)
+      final timestamp = prefs.getInt('last_saved_timestamp_$bookIdentifier');
+      if (timestamp != null) {
+        final savedDate = DateTime.fromMillisecondsSinceEpoch(timestamp);
+        final daysDifference = DateTime.now().difference(savedDate).inDays;
+
+        if (daysDifference > 30) {
+          print(
+              'Saved progress is older than 30 days, starting from beginning');
+          return 0;
+        }
+      }
+
+      print('Loaded progress for book: $bookIdentifier, page: $savedPage');
+      return savedPage;
+    } catch (e) {
+      print('Error loading progress: $e');
+      return 0;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getSavedBooks() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys = prefs.getKeys();
+      final savedBooks = <Map<String, dynamic>>[];
+
+      for (final key in keys) {
+        if (key.startsWith('last_page_')) {
+          final bookId = key.substring('last_page_'.length);
+          final lastPage = prefs.getInt(key) ?? 0;
+          final bookUrl = prefs.getString('book_url_$bookId') ?? '';
+          final bookTitle = prefs.getString('book_title_$bookId') ?? '';
+          final timestamp = prefs.getInt('last_saved_timestamp_$bookId');
+
+          savedBooks.add({
+            'bookId': bookId,
+            'lastPage': lastPage,
+            'bookUrl': bookUrl,
+            'bookTitle': bookTitle,
+            'lastSaved': timestamp != null
+                ? DateTime.fromMillisecondsSinceEpoch(timestamp)
+                : null,
+          });
+        }
+      }
+
+      return savedBooks;
+    } catch (e) {
+      print('Error getting saved books: $e');
+      return [];
+    }
+  }
+
+  Future<void> clearOldSavedData({int olderThanDays = 90}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys = prefs.getKeys();
+      final cutoffDate = DateTime.now().subtract(Duration(days: olderThanDays));
+
+      for (final key in keys) {
+        if (key.startsWith('last_saved_timestamp_')) {
+          final timestamp = prefs.getInt(key);
+          if (timestamp != null) {
+            final savedDate = DateTime.fromMillisecondsSinceEpoch(timestamp);
+            if (savedDate.isBefore(cutoffDate)) {
+              final bookId = key.substring('last_saved_timestamp_'.length);
+              await prefs.remove('last_page_$bookId');
+              await prefs.remove('book_url_$bookId');
+              await prefs.remove('book_title_$bookId');
+              await prefs.remove('last_saved_timestamp_$bookId');
+              print('Cleared old data for book: $bookId');
+            }
+          }
+        }
+      }
+    } catch (e) {
+      print('Error clearing old data: $e');
+    }
   }
 
   @override
@@ -525,9 +664,8 @@ class _EpubViewState extends State<EpubView> {
     final splits = <_ParagraphSplit>[];
     final isArabic = _isArabicText(text);
 
-    // Different splitting patterns for Arabic and English
     final sentences = isArabic
-        ? text.split(RegExp(r'[.!?؟۔]\s+')) // Arabic punctuation
+        ? text.split(RegExp(r'[.!?؟۔]\s+'))
         : text.split(RegExp(r'[.!?]+\s+'));
 
     var currentText = '';
@@ -570,7 +708,6 @@ class _EpubViewState extends State<EpubView> {
     return splits;
   }
 
-  // Build a single page with proper content fitting
   Widget _buildPageContent(
     BuildContext context,
     _PageContent pageContent,
@@ -625,8 +762,6 @@ class _EpubViewState extends State<EpubView> {
               ),
             ),
           ),
-
-          // Fixed page indicator at bottom
           Container(
             height: 50,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -783,6 +918,21 @@ class _EpubViewState extends State<EpubView> {
       );
     } else {
       _itemScrollController?.jumpTo(index: pageIndex);
+    }
+  }
+
+// Also add a method to save current page
+  void saveCurrentPage() {
+    if (_currentPageIndex >= 0 && widget.pageSnapping) {
+      _saveLastPage(_currentPageIndex);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      saveCurrentPage();
     }
   }
 
@@ -980,7 +1130,7 @@ class _EpubViewState extends State<EpubView> {
   int _currentPageIndex = 0;
   void _onPageChanged(int pageIndex) {
     _currentPageIndex = pageIndex;
-
+    _saveLastPage(pageIndex);
     if (_pages[pageIndex].paragraphIndexes.isNotEmpty) {
       final firstParagraphIndex = _pages[pageIndex].paragraphIndexes.first;
       final chapterIndex =
